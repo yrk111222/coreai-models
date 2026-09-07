@@ -23,6 +23,7 @@ import argparse
 import dataclasses
 import json
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -31,6 +32,9 @@ import torch
 import transformers
 from coreai.runtime import AIModelAssetMetadata
 from coreai_torch import TorchConverter, get_decomp_table
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _download_shim import resolve_model_path  # noqa: E402
 
 # Parakeet TDT exports as three separate graphs because the autoregressive
 # transducer loop (encoder frame pointer + (token, duration) sampling) lives
@@ -494,8 +498,9 @@ def create_parakeet(
     window: StreamingWindowArgs | None = None,
 ):
     print(f"[INFO] Sourcing {model_name}...")
+    local_path = resolve_model_path(model_name)
     model = transformers.AutoModelForTDT.from_pretrained(
-        model_name, dtype=dtype, use_safetensors=True
+        local_path, dtype=dtype, use_safetensors=True
     )
     model.eval()
     config = model.config
@@ -506,7 +511,7 @@ def create_parakeet(
     )
     # One load, threaded through: it sizes the window, shapes the dummy input, and ships in
     # the bundle.
-    processor = transformers.AutoProcessor.from_pretrained(model_name)
+    processor = transformers.AutoProcessor.from_pretrained(local_path)
 
     geometry = None
     if window is not None:
@@ -606,7 +611,12 @@ def main():
     )
     parser.add_argument(
         "--model",
-        choices=["nvidia/parakeet-tdt-0.6b-v3"],
+        choices=[
+            "nvidia/parakeet-tdt-0.6b-v3",
+            # ModelScope id: also set COREAI_DOWNLOAD_BACKEND=modelscope
+            # (plus `uv run --with modelscope`).
+            "nv-community/parakeet-tdt-0.6b-v3",
+        ],
         default="nvidia/parakeet-tdt-0.6b-v3",
         help="Model variant to convert.",
     )
