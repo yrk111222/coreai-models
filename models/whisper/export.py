@@ -18,6 +18,7 @@
 # ///
 import argparse
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -26,6 +27,9 @@ import torch
 import transformers
 from coreai.runtime import AIModelAssetMetadata
 from coreai_torch import TorchConverter, get_decomp_table
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _download_shim import resolve_model_path  # noqa: E402
 
 
 class WhisperModule(torch.nn.Module):
@@ -102,11 +106,12 @@ def create_whisper(
     include_debug_info: bool,
 ):
     print("[INFO] Sourcing model...")
-    model = WhisperModule(model_name, dtype)
+    local_path = resolve_model_path(model_name)
+    model = WhisperModule(local_path, dtype)
     model.eval()
     print("[INFO] Model sourced. Running torch export with decompositions...")
 
-    example_inputs = reference_inputs(model_name, dtype)
+    example_inputs = reference_inputs(local_path, dtype)
 
     example_inputs["decoder_input_ids"] = torch.tensor(
         [[50258, 50259, 50360, 50364]], dtype=torch.int32

@@ -28,6 +28,7 @@ from coreai_models._constants import (
     IOS_DEFAULT_MAX_CONTEXT_LENGTH,
     TRACE_KV_CACHE_SEQ_LEN,
 )
+from coreai_models._download import resolve_model_path
 from coreai_models.export.bundle import bundle_llm_asset
 from coreai_models.export.compression import (
     get_c4,
@@ -146,8 +147,27 @@ def export_model(config_or_model_id: ExportConfig | str) -> str:
 async def _async_export_model(config: ExportConfig) -> str:
     """Async implementation of export_model."""
 
+    # ---- 0. Resolve the model id to a local snapshot ----
+    # Pre-download config + tokenizer files through the unified abstraction
+    # (HuggingFace or ModelScope) so that downstream AutoConfig/AutoTokenizer
+    # calls read from the local path instead of hitting the hub. Weight files
+    # are fetched separately by the model class's from_hf* methods (with their
+    # own allow_patterns), so we don't pull safetensors here.
+    local_model_path = resolve_model_path(
+        config.hf_model_id,
+        allow_patterns=[
+            "*.json",
+            "tokenizer*",
+            "vocab.json",
+            "merges.txt",
+            "*.model",
+            "*.txt",
+            "*.jinja",
+        ],
+    )
+
     # ---- 1. Resolve model class ----
-    hf_config = AutoConfig.from_pretrained(config.hf_model_id)
+    hf_config = AutoConfig.from_pretrained(local_model_path)
     model_type = config.model_type_override or getattr(hf_config, "model_type", None)
     if model_type is None:
         raise ValueError(
@@ -265,7 +285,7 @@ async def _async_export_model(config: ExportConfig) -> str:
             logger.info(f"Applying pre-export torch quantization (preset={config.compression})")
 
             def get_calibration_data():  # type: ignore[no-untyped-def]
-                tokenizer = AutoTokenizer.from_pretrained(config.hf_model_id)
+                tokenizer = AutoTokenizer.from_pretrained(local_model_path)
                 return get_c4(tokenizer)
 
             # Copy so we don't mutate the shared preset.

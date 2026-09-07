@@ -18,6 +18,7 @@
 # ///
 import argparse
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -25,6 +26,9 @@ import torch
 import transformers
 from coreai.runtime import AIModelAssetMetadata
 from coreai_torch import TorchConverter, get_decomp_table
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _download_shim import resolve_model_path  # noqa: E402
 
 
 def reference_inputs(model_name: str, dynamic: bool = False) -> dict[str, torch.Tensor]:
@@ -98,14 +102,15 @@ def create_roberta(
     include_debug_info: bool,
 ):
     print("[INFO] Sourcing model...")
+    local_path = resolve_model_path(model_name)
     model = transformers.RobertaModel.from_pretrained(
-        model_name, add_pooling_layer=False
+        local_path, add_pooling_layer=False
     )
     model.eval()
     model.to(dtype)
     print("[INFO] Model sourced. Running torch export with decompositions...")
 
-    example_inputs = reference_inputs(model_name, dynamic)
+    example_inputs = reference_inputs(local_path, dynamic)
     ds = dynamic_shapes() if dynamic else None
 
     with torch.autocast(device_type="cpu", dtype=dtype):

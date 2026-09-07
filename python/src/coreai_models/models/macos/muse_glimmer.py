@@ -28,7 +28,6 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from huggingface_hub import snapshot_download
 from typing_extensions import Self, override
 
 from coreai_models._constants import (
@@ -38,6 +37,7 @@ from coreai_models._constants import (
     SLIDING_VALUE_CACHE_NAME,
     VALUE_CACHE_NAME,
 )
+from coreai_models._download import download_snapshot
 from coreai_models.models.base import (
     BaseForCausalLM,
     TraceSpec,
@@ -310,7 +310,7 @@ class MuseGlimmerForCausalLM(BaseForCausalLM):
     ) -> Self:
         import re
 
-        model_dir = snapshot_download(
+        model_dir = download_snapshot(
             huggingface_model_id,
             allow_patterns=["*.safetensors", "*.safetensors.index.json", "config.json"],
         )

@@ -31,6 +31,80 @@ uv run coreai.llm.export Qwen/Qwen3-0.6B --platform iOS  # iOS
 
 The export tool resolves compression, precision, and context length automatically for known models.
 
+#### Downloading from ModelScope
+
+By default models are downloaded from the HuggingFace Hub. You can switch the
+download backend to [ModelScope](https://modelscope.cn) (useful where HF access
+is slow or blocked, and for Qwen models which are mirrored on ModelScope):
+
+```bash
+# 1. Install the optional ModelScope backend
+uv pip install -e ".[modelscope]"          # from the repo root
+# or:  pip install modelscope
+
+# 2a. Per-command: pass --backend modelscope
+uv run coreai.llm.export Qwen/Qwen3-0.6B --backend modelscope
+
+# 2b. Or via environment variable
+export COREAI_DOWNLOAD_BACKEND=modelscope
+uv run coreai.llm.export Qwen/Qwen3-0.6B
+```
+
+Backend resolution precedence: `--backend` flag > `COREAI_DOWNLOAD_BACKEND`
+(`huggingface` | `modelscope`) > HuggingFace (default). The `modelscope`
+package is only imported when the ModelScope backend is active, so the
+default path needs no extra dependency.
+
+> **Python API users:** The `--backend` flag only exists on the CLI. If you
+> call `export_model(...)` directly from Python, set the backend via the
+> environment variable instead — `export COREAI_DOWNLOAD_BACKEND=modelscope`
+> (or `os.environ["COREAI_DOWNLOAD_BACKEND"]="modelscope"` before the call).
+
+> **Scope note:** ModelScope download is supported across all export paths:
+> LLM (`coreai.llm.export`), VLM (`coreai.vlm.export`), Diffusion
+> (`coreai.diffusion.export`), Segmentation (`coreai.segmentation.export`),
+> Muse-Glimmer, and standalone
+> `models/<name>/export.py` scripts that load weights from a model hub
+> (CLIP, CLAP, Whisper, T5, RoBERTa, YOLOS, Parakeet, EfficientSAM,
+> Depth-Anything). Three scripts — Wav2Vec2, EDSR, PVT — bundle weights via
+> their respective libraries (`torchaudio`, `torchSR`, `timm`) and do not
+> fetch from any hub, so the backend switch does not apply to them.
+>
+> Some HuggingFace model ids map to a different namespace on ModelScope
+> (e.g. `openai/whisper-large-v3` → `AI-ModelScope/whisper-large-v3`). Known
+> mappings are maintained in `python/src/coreai_models/_download.py`
+> (and mirrored in `models/_download_shim.py` for standalone scripts).
+>
+> **ModelScope availability (verified):** The table below covers all models
+> that need a namespace mapping (LLM registry presets + standalone scripts).
+>
+> | Model | HF ID | ModelScope status |
+> |-------|-------|-------------------|
+> | Whisper large-v3 / v3-turbo | `openai/whisper-*` | ✅ mapped to `AI-ModelScope/*` |
+> | T5 small / base | `google-t5/t5-small` / `t5-base` | ✅ mapped to `AI-ModelScope/*` |
+> | RoBERTa | `roberta-base` | ✅ mapped to `AI-ModelScope/roberta-base` |
+> | CLIP | `openai/clip-vit-base-patch32` | ✅ mapped to `openai-mirror/*` |
+> | GPT-OSS | `openai/gpt-oss-20b` | ✅ mapped to `openai-mirror/*` |
+> | Parakeet | `nvidia/parakeet-tdt-0.6b-v3` | ✅ mapped to `nv-community/*` |
+> | Qwen3-VL | `Qwen/Qwen3-VL-2B-Instruct` | ✅ same name |
+> | YOLOS | `hustvl/yolos-*` | ✅ same name |
+> | CLAP | `laion/clap-htsat-unfused` | ✅ same name |
+> | Depth-Anything | `depth-anything/da3-small` | ✅ same name |
+> | EfficientSAM | `merve/EfficientSAM` | ✅ same name (URL direct link) |
+> | SAM3 (Segmentation) | `facebook/sam3` | ✅ same name |
+> | Qwen3 / Gemma3 / Phi / Mistral / FLUX.2 / SD3.5 | various | ✅ same name |
+> | Gemma 3n (E2B / E4B) | `google/gemma-3n-*` | ✅ same name |
+> | SmolLM2 (1.7B / 360M / 135M) | `HuggingFaceTB/SmolLM2-*-Instruct` | ✅ same name |
+> | Wan 2.1 T2V | `Wan-AI/Wan2.1-T2V-1.3B-Diffusers` | ✅ same name |
+> | Muse Glimmer 30B / drafter | `meta-models/Muse-Glimmer-30B` / `-assistant` | ✅ same name |
+> | T5-large | `google-t5/t5-large` | ❌ not on ModelScope |
+>
+> Only T5-large is not available on ModelScope. It will fail with a 404 when
+> `--backend modelscope` is used; fall back to the default HuggingFace backend
+> for that model. (Note: `google/flan-t5-large` — the instruction-tuned variant
+> — does exist on ModelScope, but it is a different model with different
+> weights; `google-t5/t5-large` cannot be substituted with it.)
+
 To try exporting a model that has Python source but no registry preset, use `--experimental`:
 
 ```bash

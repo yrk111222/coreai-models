@@ -51,6 +51,16 @@ dependencies = [
 "coreai.diffusion.export" = "coreai_models.diffusion.export:main"
 "coreai.model.registry" = "coreai_models.model_registry:main"
 
+[project.optional-dependencies]
+# Enable ModelScope as a model download backend. Install with:
+#   pip install -e ".[modelscope]"   /   uv pip install -e ".[modelscope]"
+# The modelscope package is only imported when the ModelScope backend is
+# selected (via --backend modelscope or COREAI_DOWNLOAD_BACKEND=modelscope),
+# so omitting it has no effect on the default HuggingFace download path.
+modelscope = [
+    "modelscope>=1.37,<2.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/coreai_models"]
 

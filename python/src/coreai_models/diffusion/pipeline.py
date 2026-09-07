@@ -25,9 +25,9 @@ from typing import Any, cast
 
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
 
 from coreai_models._constants import DEFAULT_INCLUDE_DEBUG_INFO
+from coreai_models._download import download_snapshot, resolve_model_path
 from coreai_models.diffusion.components import MultiFunctionComponentSpec, get_component_registry
 from coreai_models.diffusion.gpu import export_multifunction, export_stateless
 from coreai_models.diffusion.models import get_pipeline_type
@@ -192,19 +192,27 @@ async def _async_export_diffusion(config: DiffusionExportConfig) -> dict[str, st
 
 
 def _load_hf_pipeline(model_id: str, pipeline_type: str, model_dtype: torch.dtype) -> Any:
-    """Load the appropriate HuggingFace pipeline based on type."""
+    """Load the appropriate pipeline based on type.
+
+    Despite the legacy name, the model may be downloaded from either the
+    HuggingFace Hub or the ModelScope hub — the download goes through the
+    unified abstraction into a local snapshot, then loaded from that path so
+    the diffusers ``from_pretrained`` call never triggers a second hub
+    download.
+    """
     logger.info(f"Loading {model_id} (type={pipeline_type}, dtype={model_dtype})...")
+    local_path = resolve_model_path(model_id)
 
     if pipeline_type == "flux2":
         from diffusers import Flux2KleinPipeline
 
-        hf_pipe = Flux2KleinPipeline.from_pretrained(model_id, torch_dtype=model_dtype)
+        hf_pipe = Flux2KleinPipeline.from_pretrained(local_path, torch_dtype=model_dtype)
         return hf_pipe
 
     if pipeline_type == "wan":
         from diffusers import WanPipeline
 
-        hf_pipe = WanPipeline.from_pretrained(model_id, torch_dtype=model_dtype)
+        hf_pipe = WanPipeline.from_pretrained(local_path, torch_dtype=model_dtype)
         return hf_pipe
 
     if pipeline_type == "sd3":
@@ -214,7 +222,7 @@ def _load_hf_pipeline(model_id: str, pipeline_type: str, model_dtype: torch.dtyp
             # T5-less path: skip text_encoder_3 / tokenizer_3 entirely. Quality cost
             # accepted; T5 can be added later by removing these kwargs.
             hf_pipe = StableDiffusion3Pipeline.from_pretrained(
-                model_id,
+                local_path,
                 torch_dtype=model_dtype,
                 text_encoder_3=None,
                 tokenizer_3=None,
@@ -234,7 +242,7 @@ def _load_hf_pipeline(model_id: str, pipeline_type: str, model_dtype: torch.dtyp
 
     try:
         return StableDiffusionPipeline.from_pretrained(
-            model_id,
+            local_path,
             torch_dtype=model_dtype,
             safety_checker=None,
         )
@@ -316,13 +324,13 @@ def _save_tokenizer(model_id: str, output_path: Path, hf_pipe: Any, overwrite: b
         try:
             try:
                 model_dir = Path(
-                    snapshot_download(
+                    download_snapshot(
                         model_id,
                         allow_patterns=[f"{subdir}/*"],
                     )
                 )
             except Exception:
-                model_dir = Path(snapshot_download(model_id, allow_patterns=[f"{subdir}/*"]))
+                model_dir = Path(download_snapshot(model_id, allow_patterns=[f"{subdir}/*"]))
 
             src_dir = model_dir / subdir
             if not src_dir.exists():

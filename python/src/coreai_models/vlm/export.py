@@ -31,11 +31,11 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from huggingface_hub import snapshot_download
 from safetensors import safe_open
 from transformers import AutoConfig, AutoTokenizer
 
 from coreai_models._constants import DEFAULT_INCLUDE_DEBUG_INFO
+from coreai_models._download import download_snapshot, resolve_model_path
 from coreai_models.export.macos import export_to_coreai
 from coreai_models.export.metadata import build_aimodel_metadata
 from coreai_models.models.macos.qwen3_vl import Qwen3VLForCausalLMEmbeddings
@@ -270,7 +270,7 @@ async def export_text_bundle(
 
     # ---- 1. Download weights + load config ----
     logging.info(f"Downloading {spec.hf_model_id}...")
-    model_dir = snapshot_download(
+    model_dir = download_snapshot(
         spec.hf_model_id,
         allow_patterns=[
             "*.safetensors",
@@ -638,12 +638,29 @@ async def export_vision_encoder(
     if not bundle_path.exists():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}. Export the text decoder first.")
 
-    # ---- 1. Text hidden size (projection target) from the HF config ----
-    text_hidden = AutoConfig.from_pretrained(spec.hf_model_id).text_config.hidden_size
+    # ---- 1. Resolve local snapshot (download via unified backend) ----
+    # Limit the snapshot to model files — from_pretrained needs the full
+    # sharded safetensors (vision weights are spread across shards) plus
+    # config, but we skip unrelated repo files (images, READMEs, etc.).
+    local_path = resolve_model_path(
+        spec.hf_model_id,
+        allow_patterns=[
+            "*.safetensors",
+            "*.safetensors.index.json",
+            "config.json",
+            "tokenizer*",
+            "vocab.json",
+            "merges.txt",
+            "*.model",
+        ],
+    )
 
-    # ---- 2. Load HF model (vision part only) ----
+    # ---- 2. Text hidden size (projection target) from the HF config ----
+    text_hidden = AutoConfig.from_pretrained(local_path).text_config.hidden_size
+
+    # ---- 3. Load HF model (vision part only) ----
     logging.info(f"Loading {spec.hf_model_id} for vision encoder extraction...")
-    hf_model = HFModel.from_pretrained(spec.hf_model_id, dtype=torch.float32)
+    hf_model = HFModel.from_pretrained(local_path, dtype=torch.float32)
     hf_model = hf_model.eval()
 
     wrapper = StaticVisionEncoder(
@@ -830,6 +847,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable verbose (DEBUG) logging",
     )
+    parser.add_argument(
+        "--backend",
+        choices=["huggingface", "modelscope"],
+        default=None,
+        help=(
+            "Model download backend: 'huggingface' (default) or 'modelscope'. "
+            "Can also be set via the COREAI_DOWNLOAD_BACKEND "
+            "environment variables. The modelscope backend requires the 'modelscope' "
+            "package (pip install modelscope)."
+        ),
+    )
     return parser
 
 
@@ -863,6 +891,12 @@ def main() -> None:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
+
+    # Propagate the download-backend choice to the environment so every download
+    # call site (text decoder, vision encoder, tokenizer) reads the same backend
+    # via coreai_models._download.resolve_backend().
+    if args.backend is not None:
+        os.environ["COREAI_DOWNLOAD_BACKEND"] = args.backend
 
     if args.list_models:
         print("VLM model types:")
